@@ -6,23 +6,23 @@
 }
 /* ---- céus ---- */
 :root,[data-sky="dia"]{color-scheme:light;
-  --sky-a:#6cc4f5;--sky-b:#b9c8ff;--sky-c:#e9ecff;--orb:#ffd24d;--hill:#e9ecff;
+  --sky-ink:#1e1b4b;--sky-a:#6cc4f5;--sky-b:#b9c8ff;--sky-c:#e9ecff;--orb:#ffd24d;--hill:#e9ecff;
   --bg:#eef1ff;--panel:#ffffff;--soft:#f3f4ff;--ink:#1e1b4b;--muted:#6b6894;--line:#dfe2f7;
   --accent:#4338ca;--accent-2:#e3e0ff;--in:#0f9d76;--out:#e0445a;--warn:#d97706;--side:#1e1b4b;--side-ink:#1e1b4b}
 [data-sky="amanhecer"]{color-scheme:light;
-  --sky-a:#c4b5fd;--sky-b:#fbb3c1;--sky-c:#ffd6a5;--orb:#ff8a5b;--hill:#fff4ee;
+  --sky-ink:#2b1b3d;--sky-a:#c4b5fd;--sky-b:#fbb3c1;--sky-c:#ffd6a5;--orb:#ff8a5b;--hill:#fff4ee;
   --bg:#fff4ee;--panel:#fffdfb;--soft:#fff0e8;--ink:#2b1b3d;--muted:#8a6f86;--line:#f3dcd6;
   --accent:#e0533d;--accent-2:#ffe1d6;--in:#0f9d76;--out:#d6334f;--warn:#c2410c}
 [data-sky="entardecer"]{color-scheme:light;
-  --sky-a:#6d28d9;--sky-b:#f472b6;--sky-c:#fb923c;--orb:#fde68a;--hill:#fff3ea;
+  --sky-ink:#ffffff;--sky-a:#6d28d9;--sky-b:#f472b6;--sky-c:#fb923c;--orb:#fde68a;--hill:#fff3ea;
   --bg:#fff3ea;--panel:#fffaf6;--soft:#ffeee2;--ink:#3b1d2e;--muted:#8d6a73;--line:#f3d9cc;
   --accent:#c2410c;--accent-2:#ffe0cc;--in:#0f8a68;--out:#cf2f55;--warn:#b45309}
 [data-sky="noite"]{color-scheme:dark;
-  --sky-a:#070b24;--sky-b:#1e1b4b;--sky-c:#312e81;--orb:#f1f0ff;--hill:#0e1330;
+  --sky-ink:#ffffff;--sky-a:#070b24;--sky-b:#1e1b4b;--sky-c:#312e81;--orb:#f1f0ff;--hill:#0e1330;
   --bg:#0e1330;--panel:#161c40;--soft:#1c2350;--ink:#eef0ff;--muted:#9aa2d4;--line:#29316a;
   --accent:#fbbf77;--accent-2:#3b3350;--in:#5eead4;--out:#fb7185;--warn:#fcd34d}
 [data-sky="madrugada"]{color-scheme:dark;
-  --sky-a:#05040f;--sky-b:#120f2e;--sky-c:#241d55;--orb:#d8d4ff;--hill:#0c0a1f;
+  --sky-ink:#ffffff;--sky-a:#05040f;--sky-b:#120f2e;--sky-c:#241d55;--orb:#d8d4ff;--hill:#0c0a1f;
   --bg:#0c0a1f;--panel:#161330;--soft:#1d1940;--ink:#ece9ff;--muted:#9d97c9;--line:#2b2657;
   --accent:#a5b4fc;--accent-2:#2a2a5a;--in:#5eead4;--out:#fb7185;--warn:#fcd34d}
 body{background:var(--bg);transition:background .8s}
@@ -42,8 +42,7 @@ body{background:var(--bg);transition:background .8s}
 
 /* ---- casca do app: cabeçalho-céu em cima, conteúdo numa coluna central ---- */
 .app{display:block;min-height:100%}
-.hdr{position:relative;color:#fff;padding:0 0 64px;overflow:hidden}
-[data-sky="dia"] .hdr{color:#1e1b4b}
+.hdr{position:relative;color:var(--sky-ink);padding:0 0 64px;overflow:hidden}
 .hdr-bar,.hdr-main{position:relative;max-width:1020px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;gap:16px}
 .hdr-main{justify-content:space-between;flex-wrap:wrap;padding-top:18px}
 .brand{font:800 22px var(--display);display:flex;gap:10px;align-items:center;color:inherit;padding:0;letter-spacing:-.3px}
@@ -131,10 +130,10 @@ main{max-width:1020px;margin:-44px auto 0;padding:0 20px 120px;position:relative
 .wdays button{min-width:48px}
 
 /* ---- login ---- */
-.auth-art{position:relative;overflow:hidden;color:#fff;background:none}
+.auth-art{position:relative;overflow:hidden;color:var(--sky-ink);background:none}
+.auth-art p{color:var(--sky-ink);opacity:.88;font-size:16px;line-height:1.5}
 .auth-art>*:not(.sky){position:relative}
 .auth-art h1{font:700 clamp(30px,4vw,46px)/1.08 var(--display);letter-spacing:-.8px;text-shadow:0 2px 24px #0003}
-[data-sky="dia"] .auth-art{color:#1e1b4b}
 .auth-art .coin{display:none}
 .auth-form h2{font:700 28px var(--display)}
 
