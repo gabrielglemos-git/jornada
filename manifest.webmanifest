@@ -1,6 +1,6 @@
 {
-  "name": "Jornada",
-  "short_name": "Jornada",
+  "name": "dot.",
+  "short_name": "dot.",
   "description": "Controle de ponto e banco de horas",
   "start_url": "./",
   "scope": "./",

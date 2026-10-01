@@ -1,4 +1,4 @@
-// Supabase do Jornada (Project Settings > API Keys). A chave "publishable"/anon é pública por design;
+// Supabase do dot. (Project Settings > API Keys). A chave "publishable"/anon é pública por design;
 // a segurança vem do RLS + criptografia no navegador.
 window.CV_CONFIG = {
   SUPABASE_URL: "https://xfhszwegbbnieusznwfz.supabase.co",

@@ -55,7 +55,7 @@
     if (!dataKey) throw new Error("sem sessão ativa");
     const salt = rnd(32);
     const cred = await navigator.credentials.create({ publicKey: {
-      challenge: rnd(32), rp: { name: "Jornada" },
+      challenge: rnd(32), rp: { name: "dot." },
       user: { id: enc.encode(email), name: email, displayName: email },
       pubKeyCredParams: [{ alg: -7, type: "public-key" }, { alg: -257, type: "public-key" }],
       authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" },

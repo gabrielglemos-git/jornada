@@ -1,4 +1,4 @@
-/* Jornada — controle de ponto e banco de horas.
+/* dot. — controle de ponto e banco de horas.
    Estado = um JSON por usuário (cifrado em store.js). Tudo é calculado na hora a partir das batidas. */
 (() => {
 const MES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
@@ -239,7 +239,7 @@ function pgHoje() {
    <div class="box c7 hojebox"><div class="phead"><h2>Registrar ponto</h2>
      <div class="seg" id="modoSeg"><button data-m="crono" aria-pressed="${modo === "crono"}">Cronômetro</button><button data-m="man" aria-pressed="${modo === "man"}">Digitar</button></div></div>
      ${body}
-     <div class="hint" id="hInfo">${info.text}</div>
+     <div class="kpis kh" id="hStats">${hojeStats(k)}</div>
      ${info.warns.map(w => `<span class="warnchip">${esc(w)}</span>`).join(" ")}
      ${tipo === "normal" ? `<div class="daytype">Hoje não trabalhou? <button class="linkbtn" data-tipo="feriado">Feriado</button> · <button class="linkbtn" data-tipo="atestado">Atestado</button> · <button class="linkbtn" data-tipo="falta">Falta</button></div>` : ""}
    </div>
@@ -249,26 +249,30 @@ function pgHoje() {
    </div></section>`;
   bindHoje(k);
 }
-function hojeInfo(k) {
-  const d = dayInfo(k), exp = expected(k);
-  if (!d) return { text: exp ? `Jornada de hoje: ${dur(exp)}.` : "Hoje não é dia de trabalho. Se trabalhar, tudo conta como hora extra.", warns: [] };
-  if (d.tipo && d.tipo !== "normal") return { text: "", warns: [] };
-  const n = d.b.length, b = d.b.map(toM), j = S.jornada;
-  let text;
-  if (d.status === "ok") text = `Dia fechado: trabalhou ${dur(d.work)} → <b class="${d.saldo >= 0 ? "pos" : "neg"}">${sgn(d.saldo)}</b>`;
-  else if (n === 3) { const zero = b[2] + (exp - (b[1] - b[0])); text = `Para zerar o dia, saia às <b class="num">${fm(zero)}</b>. ` + (d.saldo >= 0 ? `Já está <b class="pos">${sgn(d.saldo)}</b>.` : `Faltam <b class="num">${dur(-d.saldo)}</b>.`); }
-  else if (n === 2) { const g = av().gAlm, back = b[1] + (toM(j.tarde[0]) - toM(j.manha[1])) - g, zero = back + (exp - (b[1] - b[0])); text = g ? `Para ganhar ${g} min, volte às <b class="num">${fm(back)}</b> e saia às <b class="num">${fm(zero + g)}</b> (sair às ${fm(zero)} só zera o dia).` : `Com 1h de almoço, volte às <b class="num">${fm(back)}</b> e saia às <b class="num">${fm(zero)}</b>.`; }
-  else if (n === 1) { const lunch = toM(j.manha[1]) - toM(j.manha[0]); text = `Almoço previsto às <b class="num">${fm(b[0] + lunch)}</b>; saída prevista às <b class="num">${fm(b[0] + exp + 60)}</b> (com 1h de almoço).`; }
-  else text = `Jornada de hoje: ${dur(exp)}.`;
-  return { text, warns: d.warns };
+function hojeInfo(k) { const d = dayInfo(k); return { warns: d && (!d.tipo || d.tipo === "normal") ? d.warns : [] }; }
+/* estatísticas de hoje (atualizadas a cada segundo junto com o timer) */
+function hojeStats(k) {
+  const x = S.dias[k], exp = expected(k), d = dayInfo(k), j = S.jornada;
+  if (!exp || (x?.tipo && x.tipo !== "normal")) return "";
+  const b = (x?.b || []).map(toM), n = b.length, work = d ? d.work : 0, closed = n === 4 || !!x?.fim;
+  const lunch = toM(j.tarde[0]) - toM(j.manha[1]), diff = exp - work, avgIn = monthInfo(ym(k)).avgIn;
+  const zero = n === 1 ? b[0] + exp + lunch : n === 2 ? b[1] + lunch - av().gAlm + exp - (b[1] - b[0]) : n === 3 ? b[2] + exp - (b[1] - b[0]) : null;
+  const t = [
+    ["Entrada", n ? fm(b[0]) : "—"],
+    ["Almoço", n >= 3 ? dur(b[2] - b[1]) : n === 2 ? dur(nowMin() - b[1]) : "—"],
+    [n === 4 ? "Saída" : "Zera às", n === 4 ? fm(b[3]) : zero != null ? fm(zero) : "—"],
+    [diff > 0 ? "Falta" : "Extra", n ? dur(diff) : "—", closed && n ? (diff > 0 ? "neg" : "pos") : ""],
+    ["Cumprido", n ? Math.round(work / exp * 100) + "%" : "—"],
+    ["Entrada média", avgIn != null ? fm(avgIn) : "—"]];
+  return t.map(([l, v, c]) => `<div class="kpi"><div class="l">${l}</div><div class="v num ${c || ""}">${v}</div></div>`).join("");
 }
 function monthCard(mi, m, compact) {
   const ok = mi.totalEmp >= 0, of = S.oficial[m], hj = mi.hoje ? mi.totalEmp + mi.hoje.saldo : null;
   return `<div class="box"><h2>Banco de horas · ${mLabel(m).toLowerCase()}</h2>
     <div class="bigbal ${ok ? "pos" : "neg"} num">${sgn(mi.totalEmp)}</div>
     <span class="prize ${ok ? "ok" : "bad"}">${ok ? "Prêmio garantido" : "Prêmio em risco"}</span>
-    <p class="hint" style="margin:8px 0 0">Como o sistema ${regra().empresa ? "da " + esc(regra().empresa) : "da empresa"} conta (${regra().tol ? `ignora até ${regra().tol} min por marcação${regra().teto ? `, máx. ${regra().teto} no dia` : ""}` : "sem tolerância"}). ${ok ? `Margem de ${dur(mi.totalEmp)}.` : `Faltam ${dur(-mi.totalEmp)} para zerar.`}${hj != null ? ` Com hoje até agora: <b class="${hj >= 0 ? "pos" : "neg"}">${sgn(hj)}</b>.` : ""}</p>
-    <p class="hint" style="margin:4px 0 0">No relógio, minuto a minuto: <b class="num">${sgn(mi.total)}</b>.${of != null ? ` Sistema informado: <b class="num">${sgn(of)}</b> (diferença ${sgn(of - mi.totalEmp)}).` : ""}</p>
+    ${compact ? (hj != null ? `<p class="hint" style="margin:8px 0 0">Com hoje até agora: <b class="${hj >= 0 ? "pos" : "neg"}">${sgn(hj)}</b></p>` : "") : `<p class="hint" style="margin:8px 0 0">Como o sistema ${regra().empresa ? "da " + esc(regra().empresa) : "da empresa"} conta (${regra().tol ? `ignora até ${regra().tol} min por marcação${regra().teto ? `, máx. ${regra().teto} no dia` : ""}` : "sem tolerância"}). ${ok ? `Margem de ${dur(mi.totalEmp)}.` : `Faltam ${dur(-mi.totalEmp)} para zerar.`}${hj != null ? ` Com hoje até agora: <b class="${hj >= 0 ? "pos" : "neg"}">${sgn(hj)}</b>.` : ""}</p>
+    <p class="hint" style="margin:4px 0 0">No relógio, minuto a minuto: <b class="num">${sgn(mi.total)}</b>.${of != null ? ` Sistema informado: <b class="num">${sgn(of)}</b> (diferença ${sgn(of - mi.totalEmp)}).` : ""}</p>`}
     ${!compact ? kpis(mi) : ""}
     ${mi.vazios.length ? `<p class="warnchip" style="margin-top:10px">${mi.vazios.length} dia(s) sem registro completo</p>` : ""}</div>`;
 }
@@ -326,6 +330,7 @@ setInterval(() => {
   if (!S || page !== "hoje" || !$("#tkMain")) return;
   const p = hojeParts(todayK()); if (!(p.n > 0 && p.n < 4)) return;
   $("#tkMain").textContent = timerTxt(p); $("#tkLbl").textContent = timerLbl(p); $("#tkBox").classList.toggle("over", p.left < 0);
+  if ($("#hStats")) $("#hStats").innerHTML = hojeStats(todayK());
   $("#tkM").textContent = clock(p.manha * 60); $("#tkA").textContent = clock(p.alm * 60); $("#tkT").textContent = clock(p.tarde * 60); $("#tkW").textContent = clock(p.work * 60);
 }, 1000);
 /* virou o dia com o app aberto: redesenha */
@@ -352,9 +357,9 @@ function avisosHoje(k) {
   const A = av(), list = alvos(k), now = nowMin();
   const perm = !("Notification" in window) ? "Este navegador não mostra notificações; vou avisar só na tela." : Notification.permission === "denied" ? "Notificações bloqueadas no navegador: vou avisar só na tela. Libere nas configurações do site." : "";
   return `<div class="box"><h2>Avisos <button class="btn sm" id="avCfg">Personalizar</button></h2>
-    <label class="pref"><input type="checkbox" id="avisar" ${A.on ? "checked" : ""}> Avisar ${A.antec} min antes de entrar, voltar do almoço e sair</label>
+    <label class="pref"><input type="checkbox" id="avisar" ${A.on ? "checked" : ""}> Avisar ${A.antec} min antes de cada horário</label>
     ${A.on && list.length ? `<div class="avlist">${list.map(o => `<div class="${o.aviso < now ? "past" : ""}"><span class="mini">${o.t}</span><b class="num">${fm(o.alvo)}</b><span class="mini">aviso às ${fm(o.aviso)}</span></div>`).join("")}</div>` : ""}
-    <p class="hint" style="margin:8px 0 0">${perm || "Funciona com o app aberto (no PC pode ficar minimizado). No celular, deixe o app aberto em segundo plano."}</p></div>`;
+    ${perm ? `<p class="hint" style="margin:8px 0 0">${perm}</p>` : ""}</div>`;
 }
 async function setAvisos(on) {
   if (on && "Notification" in window && Notification.permission === "default") await Notification.requestPermission();
@@ -365,11 +370,11 @@ let timers = [];
 function notify(title, body, tag) {
   toast(title + " — " + body);
   if (!("Notification" in window) || Notification.permission !== "granted") return;
-  const o = { body, icon: "icon-192.png", badge: "icon-192.png", tag: "jornada-" + tag, requireInteraction: true, vibrate: [200, 100, 200] };
+  const o = { body, icon: "icon-192.png", badge: "icon-192.png", tag: "dot-" + tag, requireInteraction: true, vibrate: [200, 100, 200] };
   navigator.serviceWorker?.getRegistration().then(r => r ? r.showNotification(title, o) : new Notification(title, o)).catch(() => { try { new Notification(title, o); } catch (e) {} });
 }
 /* não repetir o mesmo aviso no mesmo dia (ex.: recarregou a página) */
-const sentKey = (k, id) => "jornada.av." + k + "." + id;
+const sentKey = (k, id) => "dot.av." + k + "." + id;
 function schedule() {
   timers.forEach(clearTimeout); timers = [];
   if (!S || !av().on) return;
@@ -572,7 +577,7 @@ function pgAjustes() {
    ${avisosBox()}
    <div class="box"><h2>Aparência</h2><p class="hint">Por padrão as cores mudam com o horário: amanhecer, dia, entardecer, noite e madrugada.</p><div class="fld">Céu<div class="seg" id="themeSeg">${[["auto", "Seguir o horário"], ["light", "Sempre dia"], ["dark", "Sempre noite"]].map(([k, t]) => `<button data-t="${k}" aria-pressed="${S.prefs.theme === k}">${t}</button>`).join("")}</div></div></div>
    <div class="box"><h2>Conta</h2><p class="hint">Conectado como <b>${esc(Store.user?.email)}</b>. Seus dados são criptografados antes de sair do aparelho: nem o administrador consegue ler.</p>
-    <div class="fld" style="margin-top:10px">Ao abrir o Jornada neste aparelho
+    <div class="fld" style="margin-top:10px">Ao abrir o dot. neste aparelho
      <label class="pref"><input type="radio" name="openMode" value="direto"> Entrar direto, sem pedir nada</label>
      <label class="pref" id="bioRow" style="display:none"><input type="radio" name="openMode" value="bio"> Pedir biometria (Face ID / digital)</label>
      <label class="pref"><input type="radio" name="openMode" value="senha"> Pedir a senha</label></div>
@@ -604,14 +609,14 @@ function pgAjustes() {
     markMode();
   });
   $("#expBtn").onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(S, null, 1)], { type: "application/json" })); a.download = "jornada-backup-" + todayK() + ".json"; a.click(); toast("Backup baixado"); };
-  $("#impFile").onchange = async e => { try { const d = JSON.parse(await e.target.files[0].text()); if (!d.jornada || !d.dias) throw 0; const snap = snapshot(); S = { ...baseState(), ...d, prefs: { ...baseState().prefs, ...d.prefs } }; commit("Backup restaurado", restoreFrom(snap)); } catch (err) { toast("Arquivo inválido: escolha um backup do Jornada (.json)"); } };
+  $("#impFile").onchange = async e => { try { const d = JSON.parse(await e.target.files[0].text()); if (!d.jornada || !d.dias) throw 0; const snap = snapshot(); S = { ...baseState(), ...d, prefs: { ...baseState().prefs, ...d.prefs } }; commit("Backup restaurado", restoreFrom(snap)); } catch (err) { toast("Arquivo inválido: escolha um backup do dot. (.json)"); } };
   $("#outBtn").onclick = async () => { await Store.signOut(); S = null; showAuth(); };
   $("#wipe").onclick = () => confirmBox("Apagar tudo?", "Todas as batidas e ajustes serão apagados. Baixe um backup antes se quiser guardar.", "Apagar tudo", () => { S = baseState(); commit("Dados apagados"); });
   $("#chPw").onclick = () => openSheet(`<form id="cpf"><h2>Trocar senha</h2><label class="fld">Nova senha<input id="np1" type="password" minlength="8" required autocomplete="new-password" autofocus></label><label class="fld">Repita<input id="np2" type="password" minlength="8" required autocomplete="new-password"></label><div class="err" id="cpe"></div><div class="tools" style="justify-content:flex-end"><button type="button" class="btn" id="cpx">Cancelar</button><button class="btn acc">Trocar</button></div></form>`, () => {
     $("#cpx").onclick = closeSheet; $("#cpf").onsubmit = async e => { e.preventDefault(); if ($("#np1").value.length < 8) { $("#cpe").textContent = "Use pelo menos 8 caracteres."; return; } if ($("#np1").value !== $("#np2").value) { $("#cpe").textContent = "As senhas não são iguais."; return; } try { await Store.changePassword($("#np1").value); closeSheet(); toast("Senha trocada"); } catch (err) { $("#cpe").textContent = err.message; } }; });
 }
 
-/* ---------- login / criar conta / recuperação (Supabase Auth do próprio Jornada) ---------- */
+/* ---------- login / criar conta / recuperação (Supabase Auth do próprio dot.) ---------- */
 function showAuth(msg, startMode, preEmail) {
   $("#appShell").hidden = true; $("#bottomnav").hidden = true; $("#authShell").hidden = false;
   let mode = startMode || "in", email0 = preEmail || Store.user?.email || "", autoBio = false;
@@ -621,7 +626,7 @@ function showAuth(msg, startMode, preEmail) {
   const draw = () => {
     const E = `<div class="err" id="aErr">${esc(msg || "")}</div>`;
     const V = {
-      bio: `<h2>Olá de novo</h2><p class="hint">Desbloqueie o Jornada de <b>${esc(email0)}</b>.</p>
+      bio: `<h2>Olá de novo</h2><p class="hint">Desbloqueie o dot. de <b>${esc(email0)}</b>.</p>
         <button type="button" class="btn acc" id="aBioGo" style="padding:16px;font-size:16px">Desbloquear</button>${E}
         <button type="button" class="linkbtn" data-m="in" style="text-align:center">Usar senha</button>`,
       up: `<h2>Criar sua conta</h2><p class="hint">Crie uma senha com pelo menos 8 caracteres.</p>
@@ -631,11 +636,11 @@ function showAuth(msg, startMode, preEmail) {
       forgot: `<h2>Esqueci a senha</h2><p class="hint">Vamos mandar um link para o seu e-mail. Ao abrir o link, você cria uma senha nova.</p>${emailFld()}
         ${E}<button class="btn acc" style="padding:12px">Enviar link</button>${back}`,
       sent: `<h2>Confira seu e-mail</h2><p class="hint">Se existir conta com <b>${esc(email0)}</b>, chegou um link para trocar a senha. Confira também o spam.</p>${back}`,
-      newpw: `<h2>Nova senha</h2><p class="hint">Crie a nova senha. Para abrir seus dados criptografados, digite também o <b>código de recuperação</b> do Jornada que você guardou.</p>
+      newpw: `<h2>Nova senha</h2><p class="hint">Crie a nova senha. Para abrir seus dados criptografados, digite também o <b>código de recuperação</b> do dot. que você guardou.</p>
         <label class="fld">Nova senha<input id="aPw" type="password" required minlength="8" autocomplete="new-password"></label>
         <label class="fld">Código de recuperação<input id="aCode" required placeholder="XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="off"></label>
         ${E}<button class="btn acc" style="padding:12px">Trocar senha e entrar</button>`,
-      rec: `<h2>Destravar seus dados</h2><p class="hint">Sua senha mudou. Digite o <b>código de recuperação</b> do Jornada que você guardou.</p>
+      rec: `<h2>Destravar seus dados</h2><p class="hint">Sua senha mudou. Digite o <b>código de recuperação</b> do dot. que você guardou.</p>
         <label class="fld">Código de recuperação<input id="aCode" required placeholder="XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="off"></label>
         <label class="fld">Sua senha<input id="aPw" type="password" required minlength="8" autocomplete="current-password"></label>
         ${E}<button class="btn acc" style="padding:12px">Destravar</button>`,
@@ -691,7 +696,7 @@ function showAuth(msg, startMode, preEmail) {
   draw();
 }
 function showRecovery(code) {
-  $("#authForm").innerHTML = `<h2>Guarde este código</h2><p class="hint">Se esquecer a senha, é a <b>única forma</b> de recuperar seus dados do Jornada — nem nós conseguimos, porque tudo é criptografado. Anote ou tire print e guarde em lugar seguro.</p>
+  $("#authForm").innerHTML = `<h2>Guarde este código</h2><p class="hint">Se esquecer a senha, é a <b>única forma</b> de recuperar seus dados do dot. — nem nós conseguimos, porque tudo é criptografado. Anote ou tire print e guarde em lugar seguro.</p>
    <div class="reccode">${code}</div><button type="button" class="btn" id="copyRec">Copiar código</button>
    <label class="note" style="cursor:pointer;align-items:center"><input type="checkbox" id="saved"> Guardei o código em lugar seguro</label>
    <button type="button" class="btn acc" id="goIn" style="padding:12px" disabled>Começar a usar</button>`;
@@ -714,7 +719,7 @@ Store.onStatus(s => {
 addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && S && Store.mode === "cloud") Store.flush().then(() => Store.reload()).then(st => { if (st) { S = fixState(st); render(); } }).catch(() => {}); });
 
 function tour() {
-  const steps = [["Bem-vindo ao Jornada", "Aqui você registra o dia e vê o banco de horas do mês."],
+  const steps = [["Bem-vindo ao dot.", "Aqui você registra o dia e vê o banco de horas do mês."],
     ["Dois jeitos de bater ponto", "No Cronômetro, um toque só a cada momento: começar, almoço, volta e fim. Ou digite os horários, se preferir."],
     ["Saldo do mês", "Em “Mês” você vê cada dia, corrige horários, marca feriado, falta ou atestado e compara com o sistema da empresa."],
     ["Sua jornada", "Em Ajustes você define os horários oficiais e os dias de trabalho."]];
