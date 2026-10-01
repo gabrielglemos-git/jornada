@@ -55,7 +55,7 @@ function dayInfo(k) {
   if (x.total != null && !b.length) work = x.total;
   else {
     for (let i = 0; i < b.length; i += 2) work += (b[i + 1] ?? (isToday ? nowMin() : b[i])) - b[i];
-    if (b.length < 4) status = isToday ? "andamento" : "incompleto";
+    if (b.length < 4 && !(x.fim && b.length % 2 === 0)) status = isToday ? "andamento" : "incompleto";
     if (b.length && b[0] > toM(j.manha[0])) warns.push(`chegou ${Math.round(b[0] - toM(j.manha[0]))} min depois`);
     if (b.length >= 3 && exp > 360 && b[2] - b[1] < 60) warns.push(`almoço de ${b[2] - b[1]} min`);
     if (b.length === 4 && exp) {
@@ -198,11 +198,19 @@ $("#today").onclick = () => { cur = ym(todayK()); animate = true; render(); };
 /* ---------- Hoje ---------- */
 const PHASE = [["Começar manhã", "Pronto para começar"], ["Sair para o almoço", "Manhã em andamento"], ["Voltar do almoço", "Almoço em andamento"], ["Encerrar o dia", "Tarde em andamento"], [null, "Dia encerrado"]];
 function hojeParts(k) {
-  const x = S.dias[k] || {}, b = (x.b || []).map(toM), ts = x.ts || [], n = b.length;
+  const x = S.dias[k] || {}, b = (x.b || []).map(toM), ts = x.ts || [], n = x.fim ? 4 : b.length;
   const start = i => ts[i] ? (Date.now() - ts[i]) / 60000 : nowMin() - b[i]; // minutos desde a batida i (com segundos no cronômetro)
   const seg = (i) => b[i] == null ? 0 : b[i + 1] != null ? b[i + 1] - b[i] : start(i);
-  return { n, b, manha: seg(0), alm: seg(1), tarde: seg(2), work: seg(0) + seg(2), running: n > 0 && n < 4 ? start(n - 1) : 0 };
+  const j = S.jornada, lunch = toM(j.tarde[0]) - toM(j.manha[1]), exp = expected(k);
+  const manha = seg(0), alm = seg(1), tarde = seg(2), work = manha + tarde;
+  /* timer: quanto falta na fase atual (negativo = passou do alvo) */
+  const left = n === 1 ? (toM(j.manha[1]) - toM(j.manha[0])) - manha : n === 2 ? lunch - av().gAlm - alm : n === 3 ? exp - work : 0;
+  return { n, b, manha, alm, tarde, work, left, fim: !!x.fim };
 }
+const ART = ["a entrada", "o almoço", "a volta", "a saída"];
+const timerTxt = p => p.n === 0 ? clock(expected(todayK()) * 60) : p.n === 4 ? clock(p.work * 60) : (p.left < 0 ? "+" : "") + clock(Math.abs(p.left) * 60);
+const timerLbl = p => p.n === 0 ? "jornada de hoje" : p.n === 4 ? "trabalhado hoje"
+  : p.left >= 0 ? ["", "para terminar a manhã", "para acabar o almoço", "para zerar o dia"][p.n] : ["", "além do horário da manhã", "de almoço a mais", "de hora extra"][p.n];
 function pgHoje() {
   const k = todayK(), x = S.dias[k], tipo = x?.tipo || "normal", exp = expected(k), mi = monthInfo(ym(k));
   const modo = S.prefs.modo || "crono";
@@ -213,14 +221,15 @@ function pgHoje() {
   } else if (modo === "crono") {
     const p = hojeParts(k), [btn, st] = PHASE[p.n];
     const live = ["", "m", "a", "t"][p.n];
-    body = `<div class="timer ${p.n === 2 ? "lunch" : p.n ? "run" : ""}"><span class="mini">${st}</span><b class="num" id="tkMain">${clock((p.n === 4 ? p.work : p.running) * 60)}</b>${p.n === 4 ? '<span class="mini">trabalhado</span>' : ""}</div>
+    body = `<div class="timer ${p.n === 2 ? "lunch" : p.n ? "run" : ""} ${p.n && p.n < 4 && p.left < 0 ? "over" : ""}" id="tkBox"><span class="mini">${st}</span><b class="num" id="tkMain">${timerTxt(p)}</b><span class="mini" id="tkLbl">${timerLbl(p)}</span></div>
       <div class="slots">
         <div class="slot ${live === "m" ? "live" : ""}"><span class="mini">Manhã</span><b class="num" id="tkM">${clock(p.manha * 60)}</b></div>
         <div class="slot ${live === "a" ? "live" : ""}"><span class="mini">Almoço</span><b class="num" id="tkA">${clock(p.alm * 60)}</b></div>
         <div class="slot ${live === "t" ? "live" : ""}"><span class="mini">Tarde</span><b class="num" id="tkT">${clock(p.tarde * 60)}</b></div>
         <div class="slot"><span class="mini">Total</span><b class="num" id="tkW">${clock(p.work * 60)}</b></div></div>
       ${btn ? `<button class="punchbtn ${p.n === 1 ? "alt" : ""}" id="bater">${btn}</button>` : ""}
-      ${p.n ? `<div class="stamps">${p.b.map((t, i) => `<span>${FASES[i]} <b class="num">${fm(t)}</b></span>`).join("")}<button class="linkbtn" id="fixDay">Corrigir horários</button></div>` : ""}`;
+      ${p.n === 1 || p.n === 2 ? `<button class="btn endday" id="endDay">${p.n === 1 ? "Encerrar o dia aqui (só manhã)" : "Encerrar o dia aqui (não vou voltar)"}</button>` : ""}
+      ${p.n ? `<div class="stamps">${p.b.map((t, i) => `<span>${FASES[i]} <b class="num">${fm(t)}</b></span>`).join("")}${p.fim && p.b.length < 4 ? '<span class="tag">encerrado antes</span>' : ""}<button class="linkbtn" id="fixDay">Corrigir horários</button><button class="linkbtn danger" id="undoPunch">${p.fim ? "Reabrir o dia" : `Cancelar ${ART[p.b.length - 1]}`}</button></div>` : ""}`;
   } else {
     body = `${timeInputs(x?.b || [])}<div class="err" id="hErr"></div>
       <div class="tools" style="justify-content:flex-end"><button class="btn" id="nowBtn">Usar hora atual no próximo</button><button class="btn acc" id="saveH">Salvar</button></div>`;
@@ -279,6 +288,27 @@ function bindHoje(k) {
     commit(`${FASES[n]} às ${t}`, restoreFrom(snap));
   };
   if ($("#fixDay")) $("#fixDay").onclick = () => editDay(k);
+  if ($("#endDay")) $("#endDay").onclick = () => {
+    const d = S.dias[k], n = d.b.length;
+    confirmBox(n === 1 ? "Encerrar o dia agora?" : "Encerrar o dia sem voltar do almoço?",
+      n === 1 ? `Vai registrar a saída às <b>${fm(Math.floor(nowMin()))}</b> e fechar o dia só com a manhã. As horas que faltarem contam como negativas.` : `O dia fecha só com a manhã (${d.b[0]}–${d.b[1]}). As horas que faltarem contam como negativas.`,
+      "Encerrar o dia", () => {
+        const snap = snapshot();
+        if (n === 1) { let t = fm(Math.floor(nowMin())); if (toM(t) <= toM(d.b[0])) t = fm(toM(d.b[0]) + 1); d.b = [...d.b, t]; d.ts = [...(d.ts || []).slice(0, 1), Date.now()]; }
+        d.fim = true; commit("Dia encerrado", restoreFrom(snap));
+      });
+  };
+  if ($("#undoPunch")) $("#undoPunch").onclick = () => {
+    const d = S.dias[k];
+    if (d.fim) { confirmBox("Reabrir o dia?", "O dia volta a ficar em andamento, de onde parou.", "Reabrir", () => { const snap = snapshot(); delete d.fim; commit("Dia reaberto", restoreFrom(snap)); }); return; }
+    const i = d.b.length - 1, nome = ART[i];
+    confirmBox(`Cancelar ${nome}?`, `Você vai apagar ${nome} registrad${i === 1 ? "o" : "a"} às <b>${d.b[i]}</b>. ${i === 0 ? "O dia volta para “Pronto para começar”." : "O dia volta para a fase anterior."} Use se bateu o ponto sem querer.`,
+      `Sim, cancelar ${nome}`, () => {
+        const snap = snapshot(); d.b = d.b.slice(0, i); d.ts = (d.ts || []).slice(0, i);
+        if (!d.b.length) { delete d.b; delete d.ts; if (!Object.keys(d).length) delete S.dias[k]; }
+        commit(`${FASES[i]} cancelad${i === 1 ? "o" : "a"}`, restoreFrom(snap));
+      });
+  };
   if ($("#saveH")) {
     const read = bindTimeInputs(v);
     $("#nowBtn").onclick = () => { const e = [...v.querySelectorAll(".hin")].find(i => !i.value); if (e) { e.value = fm(Math.floor(nowMin())); e.dispatchEvent(new Event("input")); } };
@@ -295,8 +325,8 @@ function bindHoje(k) {
 setInterval(() => {
   if (!S || page !== "hoje" || !$("#tkMain")) return;
   const p = hojeParts(todayK()); if (!(p.n > 0 && p.n < 4)) return;
-  $("#tkMain").textContent = clock(p.running * 60); $("#tkM").textContent = clock(p.manha * 60);
-  $("#tkA").textContent = clock(p.alm * 60); $("#tkT").textContent = clock(p.tarde * 60); $("#tkW").textContent = clock(p.work * 60);
+  $("#tkMain").textContent = timerTxt(p); $("#tkLbl").textContent = timerLbl(p); $("#tkBox").classList.toggle("over", p.left < 0);
+  $("#tkM").textContent = clock(p.manha * 60); $("#tkA").textContent = clock(p.alm * 60); $("#tkT").textContent = clock(p.tarde * 60); $("#tkW").textContent = clock(p.work * 60);
 }, 1000);
 /* virou o dia com o app aberto: redesenha */
 let seenDay = todayK();
@@ -408,7 +438,7 @@ function editDay(k) {
       if (er) return $("#edErr").textContent = er;
       const snap = snapshot(), b = vals.filter(Boolean), d = {};
       if (t !== "normal") d.tipo = t;
-      else if (b.length) d.b = b;
+      else if (b.length) { d.b = b; if (x.fim && b.length < 4 && b.length % 2 === 0) d.fim = true; }
       else if (x.total != null) { d.total = x.total; if (x.alm) d.alm = x.alm; }
       if (obs) d.obs = obs;
       if (Object.keys(d).length) S.dias[k] = d; else delete S.dias[k];

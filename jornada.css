@@ -198,3 +198,8 @@ main{max-width:1020px;margin:-44px auto 0;padding:0 20px 120px;position:relative
 .avrules{display:grid;gap:0}
 .avrules .pref{align-items:flex-start}
 .avrules .num-in{width:64px;display:inline-block;padding:6px;font-size:15px;margin:4px 4px 0}
+
+/* ---- timer / encerrar / cancelar ---- */
+.timer.over b{color:var(--warn)}
+.endday{justify-self:center;border-radius:999px;padding:10px 18px}
+.linkbtn.danger{color:var(--out)}
