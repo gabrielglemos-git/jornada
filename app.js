@@ -237,7 +237,7 @@ function pgHoje() {
   const info = hojeInfo(k);
   $("#view").innerHTML = `<section class="grid anim" style="margin-top:0">
    <div class="box c7 hojebox"><div class="phead"><h2>Registrar ponto</h2>
-     <div class="seg" id="modoSeg"><button data-m="crono" aria-pressed="${modo === "crono"}">Cronômetro</button><button data-m="man" aria-pressed="${modo === "man"}">Digitar</button></div></div>
+     <div class="seg" id="modoSeg" style="grid-template-columns:repeat(2,1fr)"><button data-m="crono" aria-pressed="${modo === "crono"}">Timer</button><button data-m="man" aria-pressed="${modo === "man"}">Digitar</button></div></div>
      ${body}
      <div class="kpis kh" id="hStats">${hojeStats(k)}</div>
      ${info.warns.map(w => `<span class="warnchip">${esc(w)}</span>`).join(" ")}
@@ -720,7 +720,7 @@ addEventListener("visibilitychange", () => { if (document.visibilityState === "v
 
 function tour() {
   const steps = [["Bem-vindo ao dot.", "Aqui você registra o dia e vê o banco de horas do mês."],
-    ["Dois jeitos de bater ponto", "No Cronômetro, um toque só a cada momento: começar, almoço, volta e fim. Ou digite os horários, se preferir."],
+    ["Dois jeitos de bater ponto", "No Timer, um toque só a cada momento: começar, almoço, volta e fim. Ou digite os horários, se preferir."],
     ["Saldo do mês", "Em “Mês” você vê cada dia, corrige horários, marca feriado, falta ou atestado e compara com o sistema da empresa."],
     ["Sua jornada", "Em Ajustes você define os horários oficiais e os dias de trabalho."]];
   let i = 0;
