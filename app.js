@@ -25,7 +25,7 @@ const validHM = s => /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
 
 function baseState() {
   return { v: 1, jornada: { dias: [1, 2, 3, 4, 5], manha: ["08:00", "12:00"], tarde: ["13:00", "17:48"] },
-    dias: {}, oficial: {}, prefs: { theme: "auto", modo: "crono", avisar: false } };
+    dias: {}, oficial: {}, prefs: { theme: "auto", modo: "crono", avisos: { ...AV0 } } };
 }
 let S = null, page = "hoje", cur = ym(todayK()), animate = true;
 
@@ -236,8 +236,7 @@ function pgHoje() {
    </div>
    <div class="c5" style="display:grid;gap:16px;align-content:start">
      ${monthCard(mi, ym(k), true)}
-     <div class="box"><h2>Avisos</h2><label class="pref"><input type="checkbox" id="avisar" ${S.prefs.avisar ? "checked" : ""}> Avisar quando completar 1h de almoço e na hora de sair para zerar o dia</label>
-      <p class="hint" style="margin:6px 0 0">Funciona com o app aberto (pode ficar em segundo plano no PC). No celular, deixe o app aberto.</p></div>
+     ${avisosHoje(k)}
    </div></section>`;
   bindHoje(k);
 }
@@ -249,7 +248,7 @@ function hojeInfo(k) {
   let text;
   if (d.status === "ok") text = `Dia fechado: trabalhou ${dur(d.work)} → <b class="${d.saldo >= 0 ? "pos" : "neg"}">${sgn(d.saldo)}</b>`;
   else if (n === 3) { const zero = b[2] + (exp - (b[1] - b[0])); text = `Para zerar o dia, saia às <b class="num">${fm(zero)}</b>. ` + (d.saldo >= 0 ? `Já está <b class="pos">${sgn(d.saldo)}</b>.` : `Faltam <b class="num">${dur(-d.saldo)}</b>.`); }
-  else if (n === 2) { const back = b[1] + 60, zero = back + (exp - (b[1] - b[0])); text = `Com 1h de almoço, volte às <b class="num">${fm(back)}</b> e saia às <b class="num">${fm(zero)}</b>.`; }
+  else if (n === 2) { const g = av().gAlm, back = b[1] + (toM(j.tarde[0]) - toM(j.manha[1])) - g, zero = back + (exp - (b[1] - b[0])); text = g ? `Para ganhar ${g} min, volte às <b class="num">${fm(back)}</b> e saia às <b class="num">${fm(zero + g)}</b> (sair às ${fm(zero)} só zera o dia).` : `Com 1h de almoço, volte às <b class="num">${fm(back)}</b> e saia às <b class="num">${fm(zero)}</b>.`; }
   else if (n === 1) { const lunch = toM(j.manha[1]) - toM(j.manha[0]); text = `Almoço previsto às <b class="num">${fm(b[0] + lunch)}</b>; saída prevista às <b class="num">${fm(b[0] + exp + 60)}</b> (com 1h de almoço).`; }
   else text = `Jornada de hoje: ${dur(exp)}.`;
   return { text, warns: d.warns };
@@ -268,10 +267,8 @@ const kpis = r => `<div class="kpis k4"><div class="kpi"><div class="l">Extras</
 function bindHoje(k) {
   const v = $("#view");
   segBind($("#modoSeg"), "m", m => { S.prefs.modo = m; commit(); });
-  $("#avisar").onchange = async e => {
-    if (e.target.checked && "Notification" in window && Notification.permission === "default") await Notification.requestPermission();
-    S.prefs.avisar = e.target.checked; commit(e.target.checked && window.Notification?.permission === "denied" ? "Notificações bloqueadas no navegador: vou avisar só aqui na tela" : "");
-  };
+  $("#avisar").onchange = e => setAvisos(e.target.checked);
+  if ($("#avCfg")) $("#avCfg").onclick = () => { page = "ajustes"; animate = true; render(); setTimeout(() => $("#avBox")?.scrollIntoView({ behavior: "smooth", block: "center" }), 300); };
   v.querySelectorAll("[data-tipo]").forEach(b => b.onclick = () => { const snap = snapshot(); S.dias[k] = { ...(S.dias[k] || {}), tipo: b.dataset.tipo }; commit(`Hoje marcado como ${TIPOS[b.dataset.tipo].toLowerCase()}`, restoreFrom(snap)); });
   if ($("#tipoNormal")) $("#tipoNormal").onclick = () => { const d = S.dias[k]; delete d.tipo; if (!d.b?.length) delete S.dias[k]; commit(); };
   if ($("#bater")) $("#bater").onclick = () => {
@@ -305,22 +302,58 @@ setInterval(() => {
 let seenDay = todayK();
 setInterval(() => { if (todayK() !== seenDay) { seenDay = todayK(); render(); } }, 60000);
 
-/* ---------- avisos (almoço de 1h e hora de zerar) ---------- */
+/* ---------- avisos com antecedência + metas de ganho ----------
+   Cada aviso toca `antec` minutos ANTES do horário-alvo (tempo de deslocamento).
+   Alvo = horário que cumpre a meta: chegar `gEnt` min antes da entrada, voltar do almoço `gAlm` min mais cedo,
+   sair `gSai` min depois do horário que zera o dia. */
+const AV0 = { on: false, antec: 10, entrada: true, volta: true, saida: true, gEnt: 0, gAlm: 0, gSai: 0 };
+const av = () => ({ ...AV0, ...(S.prefs.avisos || {}), on: S.prefs.avisos?.on ?? !!S.prefs.avisar });
+/* horários-alvo de hoje (minutos do dia) e o momento do aviso de cada um */
+function alvos(k) {
+  const A = av(), j = S.jornada, x = S.dias[k], exp = expected(k), out = [];
+  if (!exp || (x?.tipo && x.tipo !== "normal")) return out;
+  const b = (x?.b || []).map(toM), lunch = toM(j.tarde[0]) - toM(j.manha[1]);
+  if (A.entrada && b.length === 0) out.push({ id: "entrada", alvo: toM(j.manha[0]) - A.gEnt, t: "Hora de ir para o trabalho", txt: m => `Bata a entrada até ${fm(m)}${A.gEnt ? ` (${A.gEnt} min antes, sua meta)` : ""}.` });
+  if (A.volta && b.length === 2) out.push({ id: "volta", alvo: b[1] + lunch - A.gAlm, t: "Hora de voltar do almoço", txt: m => `Volte até ${fm(m)}${A.gAlm ? ` para ganhar ${A.gAlm} min` : " para fechar 1h de almoço"}.` });
+  if (A.saida && b.length === 3) out.push({ id: "saida", alvo: b[2] + (exp - (b[1] - b[0])) + A.gSai, t: "Hora de sair", txt: m => `Saindo às ${fm(m)} você ${A.gSai ? `ganha ${A.gSai} min hoje` : "zera o dia"}.` });
+  return out.map(o => ({ ...o, aviso: o.alvo - A.antec }));
+}
+function avisosHoje(k) {
+  const A = av(), list = alvos(k), now = nowMin();
+  const perm = !("Notification" in window) ? "Este navegador não mostra notificações; vou avisar só na tela." : Notification.permission === "denied" ? "Notificações bloqueadas no navegador: vou avisar só na tela. Libere nas configurações do site." : "";
+  return `<div class="box"><h2>Avisos <button class="btn sm" id="avCfg">Personalizar</button></h2>
+    <label class="pref"><input type="checkbox" id="avisar" ${A.on ? "checked" : ""}> Avisar ${A.antec} min antes de entrar, voltar do almoço e sair</label>
+    ${A.on && list.length ? `<div class="avlist">${list.map(o => `<div class="${o.aviso < now ? "past" : ""}"><span class="mini">${o.t}</span><b class="num">${fm(o.alvo)}</b><span class="mini">aviso às ${fm(o.aviso)}</span></div>`).join("")}</div>` : ""}
+    <p class="hint" style="margin:8px 0 0">${perm || "Funciona com o app aberto (no PC pode ficar minimizado). No celular, deixe o app aberto em segundo plano."}</p></div>`;
+}
+async function setAvisos(on) {
+  if (on && "Notification" in window && Notification.permission === "default") await Notification.requestPermission();
+  S.prefs.avisos = { ...av(), on }; delete S.prefs.avisar;
+  commit(on ? "Avisos ligados" : "Avisos desligados");
+}
 let timers = [];
-function notify(title, body) {
+function notify(title, body, tag) {
   toast(title + " — " + body);
   if (!("Notification" in window) || Notification.permission !== "granted") return;
-  navigator.serviceWorker?.getRegistration().then(r => r ? r.showNotification(title, { body, icon: "icon-192.png", tag: "ponto" }) : new Notification(title, { body, icon: "icon-192.png" }))
-    .catch(() => { try { new Notification(title, { body }); } catch (e) {} });
+  const o = { body, icon: "icon-192.png", badge: "icon-192.png", tag: "jornada-" + tag, requireInteraction: true, vibrate: [200, 100, 200] };
+  navigator.serviceWorker?.getRegistration().then(r => r ? r.showNotification(title, o) : new Notification(title, o)).catch(() => { try { new Notification(title, o); } catch (e) {} });
 }
+/* não repetir o mesmo aviso no mesmo dia (ex.: recarregou a página) */
+const sentKey = (k, id) => "jornada.av." + k + "." + id;
 function schedule() {
   timers.forEach(clearTimeout); timers = [];
-  if (!S?.prefs.avisar) return;
-  const k = todayK(), x = S.dias[k]; if (!x?.b || (x.tipo && x.tipo !== "normal")) return;
-  const b = x.b.map(toM), exp = expected(k), at = (min, title, body) => { const ms = (min - nowMin()) * 60000; if (ms > 0 && ms < 86400000) timers.push(setTimeout(() => notify(title, body), ms)); };
-  if (b.length === 2) at(b[1] + 60, "1h de almoço", "Hora de voltar. Seu intervalo já completou 1 hora.");
-  if (b.length === 3) at(b[2] + (exp - (b[1] - b[0])), "Hora de sair", "Você completou a jornada de hoje: saldo zerado.");
+  if (!S || !av().on) return;
+  const k = todayK();
+  alvos(k).forEach(o => {
+    let sent = false; try { sent = !!localStorage.getItem(sentKey(k, o.id)); } catch (e) {}
+    if (sent) return;
+    const ms = (o.aviso - nowMin()) * 60000;
+    if (ms < -5 * 60000 || ms > 86400000) return; // perdeu o horário há mais de 5 min: não avisa atrasado
+    timers.push(setTimeout(() => { if (todayK() !== k) return; try { localStorage.setItem(sentKey(k, o.id), "1"); } catch (e) {} notify(o.t, o.txt(o.alvo), o.id); }, Math.max(0, ms)));
+  });
 }
+/* o aviso de entrada é de amanhã quando o app fica aberto de um dia para o outro */
+setInterval(() => { if (S && av().on && !timers.length) schedule(); }, 5 * 60000);
 
 /* ---------- Mês ---------- */
 function pgMes() {
@@ -430,6 +463,43 @@ function pgRel() {
   };
 }
 
+/* ---------- Avisos e metas (Ajustes) ---------- */
+function avisosBox() {
+  const A = av(), tol = regra().tol, j = S.jornada;
+  const n = (id, v, max) => `<input class="num-in" id="${id}" inputmode="numeric" maxlength="${String(max).length}" value="${v || ""}" placeholder="0">`;
+  return `<div class="box" id="avBox"><h2>Avisos e metas</h2>
+    <p class="hint">O aviso toca um pouco antes do horário-alvo, para dar tempo do deslocamento. Use as metas se quiser ganhar minutos todo dia.</p>
+    <label class="pref"><input type="checkbox" id="avOn" ${A.on ? "checked" : ""}> Avisos ligados</label>
+    <label class="fld" style="margin-top:10px">Avisar com quantos minutos de antecedência${n("avAnt", A.antec, 60)}</label>
+    <div class="avrules">
+      <label class="pref"><input type="checkbox" id="avEnt" ${A.entrada ? "checked" : ""}> <span><b>Entrada</b><br><span class="mini">chegar</span> ${n("gEnt", A.gEnt, 120)} <span class="mini">min antes das ${j.manha[0]}</span></span></label>
+      <label class="pref"><input type="checkbox" id="avVol" ${A.volta ? "checked" : ""}> <span><b>Volta do almoço</b><br><span class="mini">voltar</span> ${n("gAlm", A.gAlm, 59)} <span class="mini">min antes de completar o intervalo</span></span></label>
+      <label class="pref"><input type="checkbox" id="avSai" ${A.saida ? "checked" : ""}> <span><b>Saída</b><br><span class="mini">sair</span> ${n("gSai", A.gSai, 240)} <span class="mini">min depois de zerar o dia</span></span></label>
+    </div>
+    <p class="hint" id="avPrev" style="margin:8px 0 0"></p>
+    <div class="err" id="avErr"></div><div class="tools" style="justify-content:flex-end;margin-top:8px"><button class="btn acc" id="avSave">Salvar avisos</button></div></div>`;
+}
+function bindAvisos() {
+  const num = id => Math.max(0, parseInt($("#" + id).value) || 0), tol = regra().tol, j = S.jornada;
+  const prev = () => {
+    const ant = num("avAnt"), gE = num("gEnt"), gA = num("gAlm"), gS = num("gSai"), lunch = toM(j.tarde[0]) - toM(j.manha[1]);
+    const ent = toM(j.manha[0]) - gE, warn = [gE, gA, gS].some(g => g > 0 && g <= tol);
+    $("#avPrev").innerHTML = `Num dia normal: aviso de entrada às <b class="num">${fm(ent - ant)}</b> (para bater até ${fm(ent)}); almoço de <b>${lunch - gA} min</b>, aviso ${ant} min antes de acabar.`
+      + (gE + gA + gS ? ` Ganho previsto: <b class="pos">+${gE + gA + gS} min/dia</b>.` : "")
+      + (warn ? `<br><span class="warnchip">Metas de até ${tol} min caem na tolerância da empresa e não contam: use mais que ${tol}.</span>` : "");
+  };
+  ["avAnt", "gEnt", "gAlm", "gSai"].forEach(id => $("#" + id).addEventListener("input", e => { e.target.value = e.target.value.replace(/\D/g, ""); prev(); }));
+  prev();
+  $("#avSave").onclick = async () => {
+    const ant = num("avAnt"); if (ant > 60) return $("#avErr").textContent = "Antecedência máxima: 60 min.";
+    if (num("gAlm") >= toM(j.tarde[0]) - toM(j.manha[1])) return $("#avErr").textContent = "A meta do almoço é maior que o próprio intervalo.";
+    const on = $("#avOn").checked;
+    if (on && "Notification" in window && Notification.permission === "default") await Notification.requestPermission();
+    S.prefs.avisos = { on, antec: ant, entrada: $("#avEnt").checked, volta: $("#avVol").checked, saida: $("#avSai").checked, gEnt: num("gEnt"), gAlm: num("gAlm"), gSai: num("gSai") };
+    delete S.prefs.avisar; commit("Avisos salvos");
+  };
+}
+
 /* ---------- Regras da empresa (tolerância) ---------- */
 const presetOf = R => Object.keys(REGRAS).find(k => { const p = REGRAS[k]; return p.tol === R.tol && p.teto === R.teto && p.almoco === R.almoco; }) || "custom";
 function regraBox() {
@@ -469,6 +539,7 @@ function pgAjustes() {
     <p class="hint" style="margin-top:10px">O banco de horas fecha por mês: o saldo de um mês não passa para o seguinte.</p></div>
    <div class="c6" style="display:grid;gap:16px;align-content:start">
    ${regraBox()}
+   ${avisosBox()}
    <div class="box"><h2>Aparência</h2><p class="hint">Por padrão as cores mudam com o horário: amanhecer, dia, entardecer, noite e madrugada.</p><div class="fld">Céu<div class="seg" id="themeSeg">${[["auto", "Seguir o horário"], ["light", "Sempre dia"], ["dark", "Sempre noite"]].map(([k, t]) => `<button data-t="${k}" aria-pressed="${S.prefs.theme === k}">${t}</button>`).join("")}</div></div></div>
    <div class="box"><h2>Conta</h2><p class="hint">Conectado como <b>${esc(Store.user?.email)}</b>. Seus dados são criptografados antes de sair do aparelho: nem o administrador consegue ler.</p>
     <div class="fld" style="margin-top:10px">Ao abrir o Jornada neste aparelho
@@ -480,7 +551,7 @@ function pgAjustes() {
    <div class="box"><h2>Instalar no celular ou PC</h2><p class="hint" style="margin-bottom:0"><b>iPhone:</b> abra no Safari → Compartilhar → “Adicionar à Tela de Início”. <b>Android:</b> Chrome → menu ⋮ → “Instalar app”. <b>PC:</b> Chrome/Edge → ícone de instalar na barra de endereço.</p></div></div>
    </section>`;
   const v = $("#view"), ins = [...v.querySelectorAll(".slots .hin")];
-  bindRegra();
+  bindRegra(); bindAvisos();
   ins.forEach((inp, i) => maskTime(inp, () => ins[i + 1]?.focus()));
   let dias = [...j.dias];
   $("#wdSeg").onclick = e => { const b = e.target.closest("button"); if (!b) return; const d = +b.dataset.d; dias = dias.includes(d) ? dias.filter(x => x !== d) : [...dias, d]; b.setAttribute("aria-pressed", dias.includes(d)); };
