@@ -114,11 +114,22 @@ main{max-width:1020px;margin:-44px auto 0;padding:0 20px 120px;position:relative
 .prize.ok{background:color-mix(in srgb,var(--in) 15%,transparent);color:var(--in)}
 .prize.bad{background:color-mix(in srgb,var(--out) 15%,transparent);color:var(--out)}
 .kpis{gap:10px}.kpi{background:var(--soft);border-radius:16px;padding:10px 12px}
-.bars{display:flex;gap:4px;height:150px}
-.bcol{flex:1;display:flex;flex-direction:column;min-width:4px}
-.bup,.bdn{height:50%;display:flex}
+.bars{display:flex;gap:2px;height:180px}
+.bcol{flex:1;display:flex;flex-direction:column;min-width:0;background:none;border:0;padding:0;font:inherit;color:inherit;border-radius:8px}
+button.bcol{cursor:pointer}button.bcol:hover{background:var(--soft)}
+.bup,.bdn{flex:1;display:flex;justify-content:center;position:relative}
 .bup{align-items:flex-end;border-bottom:1px dashed var(--line)}
-.bup i,.bdn i{display:block;width:100%;border-radius:999px;animation:growY .6s var(--ease) both}
+.bup i,.bdn i{display:block;width:100%;max-width:18px;min-height:5px;border-radius:999px;animation:growY .6s var(--ease) both}
+.bup b,.bdn b{position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:11px;font-weight:700;z-index:1}
+.bup b{color:var(--in)}.bdn b{color:var(--out)}
+.bdot{display:inline-block;width:7px;height:7px;border-radius:50%;border:1.5px solid var(--muted);box-sizing:border-box;flex:none}
+.bdn .bdot{margin-top:-4px;background:var(--panel)}
+.bx{height:16px;font-size:10px;line-height:16px;text-align:center;color:var(--muted)}
+.bcol.today .bx{color:var(--ink);font-weight:700}
+.bleg{display:flex;flex-wrap:wrap;gap:4px 14px;margin:10px 0 0;font-size:12px}
+.bleg span{display:inline-flex;align-items:center;gap:5px}
+.lg{width:8px;height:8px;border-radius:50%}.lg.pos{background:var(--in)}.lg.neg{background:var(--out)}
+@media (max-width:720px){.bx.minor{visibility:hidden}}
 .bup i{background:linear-gradient(var(--in),color-mix(in srgb,var(--in) 50%,transparent));transform-origin:bottom}
 .bdn i{background:linear-gradient(color-mix(in srgb,var(--out) 50%,transparent),var(--out));transform-origin:top}
 @keyframes growY{from{transform:scaleY(0)}}

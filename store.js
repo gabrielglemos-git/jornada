@@ -156,6 +156,18 @@
       const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
       if (error && !/rate|seconds/i.test(error.message)) throw error;
     },
+    /* códigos de 6 dígitos por e-mail (templates do Supabase usam {{ .Token }}) */
+    async verifyCode(email, token, type) {
+      const { data, error } = await sb.auth.verifyOtp({ email, token: token.replace(/\D/g, ""), type });
+      if (error) throw error;
+      user = data.user || data.session?.user;
+      if (type === "recovery") this.inRecovery = true;
+      return data;
+    },
+    async resendSignup(email) {
+      const { error } = await sb.auth.resend({ type: "signup", email });
+      if (error && !/rate|seconds/i.test(error.message)) throw error;
+    },
     /* mensageiro = Google Apps Script do admin (pedidos de conta e código de senha, enviados pelo Gmail dele) */
     async messenger(payload) {
       if (!cfg.MESSENGER_URL) throw new Error("mensageiro não configurado");

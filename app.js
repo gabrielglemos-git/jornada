@@ -69,7 +69,7 @@ function dayInfo(k) {
   }
   if (x.alm) warns.push(`almoço ~${x.alm} min`);
   const saldo = work - exp, saldoEmp = parts ? parts.reduce((t, p) => t + p.emp, 0) : saldo;
-  return { k, exp, tipo, status, work, saldo, saldoEmp, parts, warns, b: x.b || [], total: x.total, obs: x.obs };
+  return { k, exp, tipo, status, work, saldo, saldoEmp, parts, warns, b: x.b || [], total: x.total, obs: x.obs, fim: !!x.fim };
 }
 const lastDay = m => { const [y, mo] = m.split("-").map(Number); return m + "-" + pad(new Date(y, mo, 0).getDate()); };
 /* soma de um intervalo de datas (inclusive) */
@@ -392,8 +392,7 @@ setInterval(() => { if (S && av().on && !timers.length) schedule(); }, 5 * 60000
 
 /* ---------- Mês ---------- */
 function pgMes() {
-  const mi = monthInfo(cur), mx = Math.max(60, ...mi.days.map(d => Math.abs(d.saldoEmp)));
-  const of = S.oficial[cur];
+  const mi = monthInfo(cur), of = S.oficial[cur];
   $("#view").innerHTML = `<section class="grid anim" style="margin-top:0">
    <div class="c5" style="display:grid;gap:16px;align-content:start">${monthCard(mi, cur, false)}
     <div class="box"><h2>Saldo do sistema da empresa</h2><p class="hint">Digite o saldo que o sistema oficial mostra para este mês (ex.: +0:09 ou -1:20) para comparar com a conta do app.</p>
@@ -401,7 +400,7 @@ function pgMes() {
      <div class="err" id="ofErr"></div></div>
    </div>
    <div class="c7" style="display:grid;gap:16px;align-content:start">
-    <div class="box"><h2>Saldo por dia</h2>${mi.days.length ? `<div class="bars">${mi.days.map(d => `<div class="bcol" title="${d.k.slice(8)}: ${sgn(d.saldoEmp)}"><div class="bup">${d.saldoEmp > 0 ? `<i style="height:${d.saldoEmp / mx * 100}%"></i>` : ""}</div><div class="bdn">${d.saldoEmp < 0 ? `<i style="height:${-d.saldoEmp / mx * 100}%"></i>` : ""}</div></div>`).join("")}</div>` : '<p class="hint">Nenhum dia registrado neste mês.</p>'}</div>
+    <div class="box"><h2>Saldo por dia</h2>${dayBars(mi, cur)}</div>
     <div class="box"><h2>Dias <button class="btn sm" id="addDay">+ Outro dia</button></h2><div class="list">${mi.days.slice().reverse().map(dayRow).join("") || '<p class="hint">Nada por aqui ainda.</p>'}</div></div>
    </div></section>`;
   const v = $("#view");
@@ -410,10 +409,31 @@ function pgMes() {
   $("#ofSave").onclick = () => { const s = $("#ofIn").value.trim().replace("−", "-"), mm = s.match(/^([+-]?)(\d{1,3}):([0-5]\d)$/); if (!mm) return $("#ofErr").textContent = "Use o formato +0:09 ou -1:20."; S.oficial[cur] = (mm[1] === "-" ? -1 : 1) * (+mm[2] * 60 + +mm[3]); commit("Saldo oficial salvo"); };
   if ($("#ofDel")) $("#ofDel").onclick = () => { delete S.oficial[cur]; commit(); };
 }
+/* gráfico do mês: uma coluna por dia do calendário. Só dia fechado tem barra (é o que conta no saldo);
+   dia em aberto vira um ponto na linha do zero. */
+function dayBars(mi, m) {
+  if (!mi.days.length) return '<p class="hint">Nenhum dia registrado neste mês.</p>';
+  const by = Object.fromEntries(mi.days.map(d => [d.k, d])), closed = mi.days.filter(d => d.status === "ok" && d.saldoEmp);
+  const mx = Math.max(30, ...closed.map(d => Math.abs(d.saldoEmp))), tk = todayK();
+  const best = closed.reduce((a, d) => d.saldoEmp > (a?.saldoEmp ?? 0) ? d : a, null), worst = closed.reduce((a, d) => d.saldoEmp < (a?.saldoEmp ?? 0) ? d : a, null);
+  // valor escrito: primeiro o melhor e o pior, depois os outros que couberem (3 colunas de folga entre vizinhos do mesmo lado)
+  const lab = [], dn = d => +d.k.slice(8);
+  [best, worst, ...closed].forEach(d => { if (d && !lab.some(o => Math.sign(o.saldoEmp) === Math.sign(d.saldoEmp) && Math.abs(dn(o) - dn(d)) < 3)) lab.push(d); });
+  const cols = Array.from({ length: +lastDay(m).slice(8) }, (_, i) => {
+    const day = i + 1, k = m + "-" + pad(day), d = by[k], open = d && d.status !== "ok", v = d && !open ? d.saldoEmp : 0, h = Math.abs(v) / mx * 80;
+    const lbl = lab.includes(d) ?`<b style="${v > 0 ? "bottom" : "top"}:calc(${h}% + 3px)">${sgn(v)}</b>` : "";
+    const body = `<div class="bup">${v > 0 ? `<i style="height:${h}%"></i>${lbl}` : ""}</div><div class="bdn">${v < 0 ? `<i style="height:${h}%"></i>${lbl}` : open ? '<u class="bdot"></u>' : ""}</div>
+      <span class="bx ${day === 1 || day % 5 === 0 ? "" : "minor"}">${day}</span>`;
+    const cls = `bcol ${k === tk ? "today" : ""}`;
+    return d ? `<button type="button" class="${cls}" data-day="${k}" title="${day} ${DSEM[dateOf(k).getDay()]}: ${open ? "em aberto, não conta" : sgn(v)}">${body}</button>` : `<div class="${cls}">${body}</div>`;
+  }).join("");
+  return `<div class="bars">${cols}</div>
+    <p class="hint bleg"><span><i class="lg pos"></i>ganhou horas</span><span><i class="lg neg"></i>perdeu horas</span><span><u class="bdot"></u>dia em aberto (não conta)</span><span>Toque num dia para abrir.</span></p>`;
+}
 /* cada dia mostra de onde veio o saldo: entrada, almoço e saída (tolerados em cinza) */
 const partChips = d => (d.parts || []).filter(p => p.v).map(p => `<span class="pchip ${p.emp > 0 ? "pos" : p.emp < 0 ? "neg" : "tol"}" title="${p.emp ? "" : "dentro da tolerância: o sistema ignora"}">${p.n} ${sgn(p.v)}</span>`).join("");
 function dayRow(d) {
-  const tag = d.status === "vazio" ? "sem registro" : d.status === "incompleto" ? "incompleto" : d.status === "andamento" ? "em andamento" : d.tipo && d.tipo !== "normal" ? TIPOS[d.tipo] : "";
+  const tag = d.status === "vazio" ? "sem registro" : d.status === "incompleto" ? "incompleto" : d.status === "andamento" ? "em andamento" : d.tipo && d.tipo !== "normal" ? TIPOS[d.tipo] : d.fim && d.b.length < 4 ? "encerrado antes" : "";
   const times = d.b?.length ? d.b.join(" · ") : d.total != null ? `total ${dur(d.total)} (importado)` : "";
   const open = d.status === "vazio" || d.status === "incompleto";
   return `<button class="row dayrow" data-day="${d.k}"><div class="dnum"><b>${+d.k.slice(8)}</b><span>${DSEM[dateOf(d.k).getDay()]}</span></div>
@@ -429,7 +449,8 @@ function editDay(k) {
   const x = S.dias[k] || {}, tipo = x.tipo || "normal";
   openSheet(`<form id="edf"><h2>${esc(dLabel(k))}</h2>
     <div class="seg" id="tipoSeg">${Object.entries(TIPOS).map(([t, l]) => `<button type="button" data-t="${t}" aria-pressed="${tipo === t}">${l}</button>`).join("")}</div>
-    <div id="edTimes" ${tipo !== "normal" ? "hidden" : ""}>${timeInputs(x.b || [])}${x.total != null && !x.b?.length ? `<p class="hint">Este dia foi importado só com o total (${dur(x.total)}). Digite os horários se quiser detalhar.</p>` : ""}</div>
+    <div id="edTimes" ${tipo !== "normal" ? "hidden" : ""}>${timeInputs(x.b || [])}${x.total != null && !x.b?.length ? `<p class="hint">Este dia foi importado só com o total (${dur(x.total)}). Digite os horários se quiser detalhar.</p>` : ""}
+     <label class="pref" style="margin-top:8px"><input type="checkbox" id="edFim" ${x.fim ? "checked" : ""}> Encerrei o dia aqui e não voltei (só entrada e saída)</label></div>
     <label class="fld">Observação<input id="edObs" maxlength="120" value="${esc(x.obs || "")}" placeholder="Ex.: atestado entregue ao RH"></label>
     <div class="err" id="edErr"></div>
     <div class="tools" style="justify-content:space-between"><button type="button" class="btn danger" id="edDel">Limpar dia</button><span class="tools"><button type="button" class="btn" id="edx">Cancelar</button><button class="btn acc">Salvar</button></span></div></form>`, sh => {
@@ -441,9 +462,11 @@ function editDay(k) {
       e.preventDefault();
       const vals = read(), obs = $("#edObs").value.trim(), er = t === "normal" && checkTimes(vals);
       if (er) return $("#edErr").textContent = er;
-      const snap = snapshot(), b = vals.filter(Boolean), d = {};
+      const b = vals.filter(Boolean), fim = t === "normal" && $("#edFim").checked && b.length < 4;
+      if (fim && b.length !== 2) return $("#edErr").textContent = "Para encerrar sem voltar, preencha a entrada e a saída (os dois primeiros horários).";
+      const snap = snapshot(), d = {};
       if (t !== "normal") d.tipo = t;
-      else if (b.length) { d.b = b; if (x.fim && b.length < 4 && b.length % 2 === 0) d.fim = true; }
+      else if (b.length) { d.b = b; if (fim) d.fim = true; }
       else if (x.total != null) { d.total = x.total; if (x.alm) d.alm = x.alm; }
       if (obs) d.obs = obs;
       if (Object.keys(d).length) S.dias[k] = d; else delete S.dias[k];
@@ -623,6 +646,8 @@ function showAuth(msg, startMode, preEmail) {
   const back = '<button type="button" class="linkbtn" data-m="in">← Voltar para entrar</button>';
   const emailFld = ro => `<label class="fld">E-mail<input id="aEmail" type="email" required autocomplete="email" value="${esc(email0)}" ${ro ? "readonly" : ""}></label>`;
   const rememberFld = email0 && Store.bioEnabled(email0) ? "" : `<label class="pref" style="margin-top:2px"><input type="checkbox" id="aRemember" checked> Manter minha sessão neste aparelho</label>`;
+  const codeFld = `<label class="fld">Código do e-mail<input id="aOtp" required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,8}" maxlength="8" placeholder="000000"></label>`;
+  let pendingPw = "";
   const draw = () => {
     const E = `<div class="err" id="aErr">${esc(msg || "")}</div>`;
     const V = {
@@ -633,9 +658,17 @@ function showAuth(msg, startMode, preEmail) {
         ${emailFld()}<label class="fld">Senha<input id="aPw" type="password" required minlength="8" autocomplete="new-password"></label>
         <label class="fld">Repita a senha<input id="aPw2" type="password" required minlength="8" autocomplete="new-password"></label>
         ${rememberFld}${E}<button class="btn acc" style="padding:12px">Criar conta</button>${back}`,
-      forgot: `<h2>Esqueci a senha</h2><p class="hint">Vamos mandar um link para o seu e-mail. Ao abrir o link, você cria uma senha nova.</p>${emailFld()}
-        ${E}<button class="btn acc" style="padding:12px">Enviar link</button>${back}`,
-      sent: `<h2>Confira seu e-mail</h2><p class="hint">Se existir conta com <b>${esc(email0)}</b>, chegou um link para trocar a senha. Confira também o spam.</p>${back}`,
+      forgot: `<h2>Esqueci a senha</h2><p class="hint">Vamos mandar um código de 6 dígitos para o seu e-mail.</p>${emailFld()}
+        ${E}<button class="btn acc" style="padding:12px">Enviar código</button>${back}`,
+      sent: `<h2>Nova senha</h2><p class="hint">Se existir conta com <b>${esc(email0)}</b>, chegou um código no e-mail (confira o spam).</p>
+        ${codeFld}
+        <label class="fld">Nova senha<input id="aPw" type="password" required minlength="8" autocomplete="new-password"></label>
+        <label class="fld">Código de recuperação do dot.<input id="aCode" required placeholder="XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="off"></label>
+        ${E}<button class="btn acc" style="padding:12px">Trocar senha e entrar</button>
+        <button type="button" class="linkbtn" data-m="forgot">Reenviar código</button>${back}`,
+      verify: `<h2>Confirme seu e-mail</h2><p class="hint">Mandamos um código de 6 dígitos para <b>${esc(email0)}</b>. Confira também o spam.</p>
+        ${codeFld}${E}<button class="btn acc" style="padding:12px">Confirmar e criar conta</button>
+        <button type="button" class="linkbtn" id="aResend">Reenviar código</button>${back}`,
       newpw: `<h2>Nova senha</h2><p class="hint">Crie a nova senha. Para abrir seus dados criptografados, digite também o <b>código de recuperação</b> do dot. que você guardou.</p>
         <label class="fld">Nova senha<input id="aPw" type="password" required minlength="8" autocomplete="new-password"></label>
         <label class="fld">Código de recuperação<input id="aCode" required placeholder="XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="off"></label>
@@ -661,6 +694,7 @@ function showAuth(msg, startMode, preEmail) {
       catch (ex) { msg = ex?.name === "NotAllowedError" ? "" : "Não foi possível desbloquear. Use sua senha."; draw(); }
       finally { if (b.isConnected) { b.innerHTML = old; b.disabled = false; } }
     };
+    if ($("#aResend")) $("#aResend").onclick = async () => { try { await Store.resendSignup(email0); toast("Código reenviado"); } catch (ex) { $("#aErr").textContent = "Não foi possível reenviar agora."; } };
     if (mode === "bio" && !autoBio) { autoBio = true; $("#aBioGo").click(); }
     const f = $("#authForm").querySelector("input:not([readonly])"); if (f && matchMedia("(pointer:fine)").matches) f.focus();
   };
@@ -676,12 +710,17 @@ function showAuth(msg, startMode, preEmail) {
       if (email) email0 = email;
       if ($("#aRemember")) Store.setRemember($("#aRemember").checked);
       if (mode === "forgot") { await Store.resetEmail(email); mode = "sent"; msg = ""; return draw(); }
+      if (mode === "sent") { await Store.verifyCode(email0, $("#aOtp").value, "recovery"); S = fixState((await Store.recover($("#aCode").value, pw)).state); enterApp(); toast("Senha trocada"); return; }
+      if (mode === "verify") {
+        await Store.verifyCode(email0, $("#aOtp").value, "signup");
+        const c = await Store.createVault(pendingPw, baseState()); pendingPw = ""; S = c.state; return showRecovery(c.recoveryCode);
+      }
       if (mode === "newpw") { S = fixState((await Store.recover($("#aCode").value, pw)).state); enterApp(); toast("Senha trocada"); return; }
       if (mode === "rec") { S = fixState((await Store.recover($("#aCode").value, pw)).state); enterApp(); toast("Acesso recuperado"); return; }
       if (mode === "up") {
         if (pw !== $("#aPw2").value) return err("As senhas não são iguais.");
         const r = await Store.signUp(email, pw, baseState());
-        if (r.confirmEmail) { mode = "in"; msg = "Conta criada! Confirme pelo e-mail e depois entre."; return draw(); }
+        if (r.confirmEmail) { pendingPw = pw; mode = "verify"; msg = ""; return draw(); }
         S = r.state; return showRecovery(r.recoveryCode);
       }
       const r = await Store.signIn(email, pw);
@@ -690,7 +729,8 @@ function showAuth(msg, startMode, preEmail) {
       S = fixState(r.state); enterApp();
     } catch (ex) {
       const m = ex?.message || "";
-      err(/not allowed|disabled/i.test(m) ? "Cadastro fechado neste app." : /Invalid login/i.test(m) ? "E-mail ou senha incorretos." : /registered|already/i.test(m) ? "Esse e-mail já tem conta. Tente entrar." : /fetch|network|Failed/i.test(m) ? "Sem conexão. Verifique a internet." : /decrypt|operation/i.test(m) ? "Código de recuperação incorreto." : "Algo deu errado. Tente de novo.");
+      if (mode === "in" && /not confirmed/i.test(m)) { pendingPw = $("#aPw").value; mode = "verify"; msg = ""; draw(); Store.resendSignup(email0).catch(() => {}); return; }
+      err(/not allowed|disabled/i.test(m) ? "Cadastro fechado neste app." : /Invalid login/i.test(m) ? "E-mail ou senha incorretos." : /registered|already/i.test(m) ? "Esse e-mail já tem conta. Tente entrar." : /token|otp|expired/i.test(m) ? "Código do e-mail inválido ou vencido. Peça outro." : /not confirmed/i.test(m) ? "Confirme seu e-mail antes de entrar." : /fetch|network|Failed/i.test(m) ? "Sem conexão. Verifique a internet." : /decrypt|operation/i.test(m) ? "Código de recuperação incorreto." : "Algo deu errado. Tente de novo.");
     } finally { if (btn.isConnected) { btn.innerHTML = old; btn.disabled = false; } }
   };
   draw();
